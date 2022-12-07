@@ -1,0 +1,45 @@
+import json
+import boto3
+import os
+s3 = boto3.resource("s3")
+s3_client = boto3.client("s3")
+sqs_client = boto3.client('sqs')
+
+# TODO remove later
+stage = os.environ["stage"]="stage1"
+bucket = os.environ["BUCKET"]="my-task-02"
+keys = os.environ["Key"]="chandra.txt$chandra3.txt$chandra8.txt"
+queue_url = os.environ["QUEUEURL"]="https://sqs.us-east-2.amazonaws.com/538864501406/stage-2.fifo"
+
+"""
+    Download .txt file from S3 and convert to json and upload it to S3
+"""
+def str_json(bucket, key, json_file_name):
+    obj = s3.Object(bucket, key)
+    file_data = obj.get()['Body'].read().decode('utf-8') 
+    data = file_data.split(",")
+    emp_dict = {
+        "Name": data[0],
+        "Location": data[1],
+        "Company": data[2]
+    }
+    str_emp = json.dumps(emp_dict)
+    with open(json_file_name, "w") as f:
+        f.write(str_emp)
+    object_name = os.path.basename(json_file_name)
+    response = s3_client.upload_file(object_name, bucket, "stage1/"+json_file_name)
+    return {
+        "Bucket": bucket,
+        "Key": "stage1/"+json_file_name
+    }
+if __name__ == "__main__":
+    message_body=[]
+    for key in keys.split("$"):
+        json_file_name = key.split(".")[0]+".json"
+        resp = str_json(bucket, key, json_file_name)
+        message_body.append(resp)
+
+    sqs_client.send_message(
+        QueueUrl=queue_url,
+        MessageBody=str(message_body)
+    )
